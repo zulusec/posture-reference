@@ -1,0 +1,50 @@
+"""Fixture-backed stand-ins for the AWS clients.
+
+These expose exactly the methods the checks call, so demo mode exercises the
+real check code rather than a parallel implementation.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from botocore.exceptions import ClientError
+
+_FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _load(name: str) -> dict:
+    return json.loads((_FIXTURES / name).read_text(encoding="utf-8"))
+
+
+def _missing(code: str, operation: str) -> ClientError:
+    return ClientError({"Error": {"Code": code, "Message": code}}, operation)
+
+
+class DemoS3:
+    def __init__(self, data: dict | None = None):
+        self._data = data if data is not None else _load("s3.json")
+
+    def list_buckets(self) -> dict:
+        return self._data["list_buckets"]
+
+    def get_public_access_block(self, Bucket: str) -> dict:
+        config = self._data["get_public_access_block"].get(Bucket)
+        if config is None:
+            raise _missing("NoSuchPublicAccessBlockConfiguration", "GetPublicAccessBlock")
+        return {"PublicAccessBlockConfiguration": config}
+
+    def get_bucket_policy_status(self, Bucket: str) -> dict:
+        status = self._data["get_bucket_policy_status"].get(Bucket)
+        if status is None:
+            raise _missing("NoSuchBucketPolicy", "GetBucketPolicyStatus")
+        return {"PolicyStatus": {"IsPublic": status}}
+
+
+class DemoEc2:
+    def __init__(self, data: dict | None = None):
+        self._data = data if data is not None else _load("ec2.json")
+
+    def describe_security_groups(self) -> dict:
+        return self._data["describe_security_groups"]
