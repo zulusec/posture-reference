@@ -75,3 +75,10 @@ def test_both_ip_versions_produce_separate_findings():
     }
     findings = open_security_groups.run(FakeEc2([_group(permissions=[permission])]))
     assert len(findings) == 2
+
+
+def test_findings_carry_the_check_id():
+    ec2 = FakeEc2([_group(permissions=[_tcp(22, 22)])])
+    findings = open_security_groups.run(ec2)
+    assert findings
+    assert {f.check_id for f in findings} == {"EC2.OPEN_SECURITY_GROUP"}
