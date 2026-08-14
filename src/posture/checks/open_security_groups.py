@@ -37,7 +37,7 @@ def _open_sources(permission: dict) -> list[str]:
 
 
 def _port_range(permission: dict) -> tuple[int, int]:
-    if permission.get("IpProtocol") == _ALL_PROTOCOLS:
+    if permission.get("IpProtocol", _ALL_PROTOCOLS) == _ALL_PROTOCOLS:
         return (0, 65535)
     return (permission.get("FromPort", 0), permission.get("ToPort", 0))
 
