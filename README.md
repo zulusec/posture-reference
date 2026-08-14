@@ -58,16 +58,28 @@ posture --region us-east-1 --json
 
 ## How this was built
 
-Every change here arrived as a pull request carrying generated code, its
-tests, and a CI run, reviewed before merge. The git history is the record.
-
-AI wrote this code. Review, version control, and tests are what make it
+AI wrote this code. Version control, tests, and review are what make it
 trustworthy, and the deterministic behaviour is enforced by a test rather
 than promised in a paragraph. That is the whole argument: AI builds and
 orchestrates the tooling, and the tooling is what produces the answer.
 
-Reviews here are by a single practitioner. That is the human gate, and it
-is described accurately rather than dressed up as a team process.
+Every change landed as a pull request carrying its code, its tests, and a
+green CI run. Review happened after the merge, not before it, and each round
+of review findings landed as its own pull request. PRs #2, #4, #7 and #9 are
+those review rounds: #2 follows #1, #4 follows #3, #7 follows #6, #9 follows
+#8. Open any of those four and you can read what the review found and what
+the fix was.
+
+GitHub therefore records no approving review on any of the ten pull requests,
+and the merges look fast because the merge was not the gate. The gate was the
+review pass that produced the next pull request. The tradeoff is real: the
+finding and its fix are both permanently in the history rather than squashed
+out of it, at the cost of code sitting on `main` for a few minutes before it
+had been reviewed. That is stated here because anyone who opens the pull
+request list will work it out in thirty seconds, and should not have to.
+
+Review here is by a single practitioner. That is the human gate, and it is
+described accurately rather than dressed up as a team process.
 
 ## License
 
