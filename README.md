@@ -87,7 +87,7 @@ treating it that way cannot be handed that claim by a partial scan.
 ## How this was built
 
 AI wrote this code. Version control, tests, and review are what make it
-trustworthy, and the deterministic behaviour is enforced by a test rather
+trustworthy, and the deterministic behavior is enforced by a test rather
 than promised in a paragraph. That is the whole argument: AI builds and
 orchestrates the tooling, and the tooling is what produces the answer.
 
@@ -101,12 +101,12 @@ a larger scale, and PRs #11 onward are its rounds.
 
 GitHub therefore records no approving review on any pull request in this
 repository, and the merges look fast because the merge was not the gate. The
-gate was the
-review pass that produced the next pull request. The tradeoff is real: the
-finding and its fix are both permanently in the history rather than squashed
-out of it, at the cost of code sitting on `main` for a few minutes before it
-had been reviewed. That is stated here because anyone who opens the pull
-request list will work it out in thirty seconds, and should not have to.
+gate was the review pass that produced the next pull request. The tradeoff
+is real: the finding and its fix are both permanently in the history rather
+than squashed out of it, at the cost of code sitting on `main` for a few
+minutes before it had been reviewed. That is stated here because anyone who
+opens the pull request list will work it out in thirty seconds, and should
+not have to.
 
 Review here is by a single practitioner. That is the human gate, and it is
 described accurately rather than dressed up as a team process.
