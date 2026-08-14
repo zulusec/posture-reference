@@ -1,0 +1,28 @@
+{
+  "list_buckets": {
+    "Buckets": [
+      { "Name": "example-corp-customer-exports" },
+      { "Name": "example-corp-audit-logs" },
+      { "Name": "example-corp-static-assets" }
+    ]
+  },
+  "get_public_access_block": {
+    "example-corp-customer-exports": {
+      "BlockPublicAcls": false,
+      "IgnorePublicAcls": false,
+      "BlockPublicPolicy": false,
+      "RestrictPublicBuckets": false
+    },
+    "example-corp-audit-logs": {
+      "BlockPublicAcls": true,
+      "IgnorePublicAcls": true,
+      "BlockPublicPolicy": true,
+      "RestrictPublicBuckets": true
+    }
+  },
+  "get_bucket_policy_status": {
+    "example-corp-customer-exports": true,
+    "example-corp-audit-logs": false,
+    "example-corp-static-assets": false
+  }
+}
