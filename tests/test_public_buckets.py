@@ -1,4 +1,3 @@
-import pytest
 from botocore.exceptions import ClientError, EndpointConnectionError
 
 from posture.checks import public_buckets
@@ -10,22 +9,36 @@ def _client_error(code):
 
 
 class FakeS3:
-    def __init__(self, buckets, pab=None, policy_status=None):
+    """Serves one bucket per page, the way ListBuckets pages a real account."""
+
+    def __init__(self, buckets, pab=None, policy_status=None, denied=()):
         self._buckets = buckets
         self._pab = pab or {}
         self._policy_status = policy_status or {}
+        self._denied = set(denied)
         self.pab_calls = 0
+        self.list_calls = 0
 
-    def list_buckets(self):
-        return {"Buckets": [{"Name": name} for name in self._buckets]}
+    def list_buckets(self, ContinuationToken=None):
+        self.list_calls += 1
+        start = int(ContinuationToken) if ContinuationToken else 0
+        names = self._buckets[start:start + 1]
+        response = {"Buckets": [{"Name": name} for name in names]}
+        if start + 1 < len(self._buckets):
+            response["ContinuationToken"] = str(start + 1)
+        return response
 
     def get_public_access_block(self, Bucket):
         self.pab_calls += 1
+        if Bucket in self._denied:
+            raise _client_error("AccessDenied")
         if Bucket not in self._pab:
             raise _client_error("NoSuchPublicAccessBlockConfiguration")
         return {"PublicAccessBlockConfiguration": self._pab[Bucket]}
 
     def get_bucket_policy_status(self, Bucket):
+        if Bucket in self._denied:
+            raise _client_error("AccessDenied")
         if Bucket not in self._policy_status:
             raise _client_error("NoSuchBucketPolicy")
         return {"PolicyStatus": {"IsPublic": self._policy_status[Bucket]}}
@@ -61,8 +74,12 @@ ALL_ON = {
 ALL_OFF = dict.fromkeys(ALL_ON, False)
 
 
-def _run(s3, s3control=None, account_id=FakeS3Control.ACCOUNT):
+def _result(s3, s3control=None, account_id=FakeS3Control.ACCOUNT):
     return public_buckets.run(s3, s3control, account_id)
+
+
+def _run(s3, s3control=None, account_id=FakeS3Control.ACCOUNT):
+    return _result(s3, s3control, account_id).findings
 
 
 def test_fully_blocked_bucket_produces_no_findings():
@@ -112,15 +129,6 @@ def test_absent_configuration_does_not_claim_the_settings_were_set_false():
     evidence = _run(s3)[0].evidence
     assert evidence.startswith("no Block Public Access configuration exists on this bucket")
     assert "disabled settings" not in evidence
-
-
-def test_unexpected_client_error_is_not_swallowed():
-    class Broken(FakeS3):
-        def get_public_access_block(self, Bucket):
-            raise _client_error("AccessDenied")
-
-    with pytest.raises(ClientError):
-        _run(Broken(["b"]))
 
 
 def test_public_access_block_is_fetched_once_per_bucket():
@@ -179,10 +187,13 @@ def test_account_lookup_is_made_once_for_the_whole_run():
 def test_denied_account_lookup_degrades_to_the_bucket_level():
     s3 = FakeS3(["b"], pab={"b": ALL_OFF}, policy_status={"b": False})
     control = FakeS3Control(error=_client_error("AccessDenied"))
-    findings = _run(s3, control)
-    assert len(findings) == 1
-    assert "not enabled at bucket level" in findings[0].evidence
-    assert "account" not in findings[0].evidence
+    result = _result(s3, control)
+    assert len(result.findings) == 1
+    assert "not enabled at bucket level" in result.findings[0].evidence
+    assert "account" not in result.findings[0].evidence
+    assert [(e.resource_id, e.operation) for e in result.errors] == [
+        ("account", "GetPublicAccessBlock")
+    ]
 
 
 def test_unreachable_account_lookup_degrades_to_the_bucket_level():
@@ -190,10 +201,58 @@ def test_unreachable_account_lookup_degrades_to_the_bucket_level():
     control = FakeS3Control(
         error=EndpointConnectionError(endpoint_url="https://s3-control.example")
     )
-    assert "not enabled at bucket level" in _run(s3, control)[0].evidence
+    result = _result(s3, control)
+    assert "not enabled at bucket level" in result.findings[0].evidence
+    assert result.errors[0].detail == "EndpointConnectionError"
 
 
 def test_omitting_the_account_client_narrows_the_claim_rather_than_widening_it():
     s3 = FakeS3(["b"], pab={"b": ALL_OFF}, policy_status={"b": False})
     assert "not enabled at bucket level" in _run(s3, None)[0].evidence
     assert "not enabled at bucket level" in _run(s3, FakeS3Control(ALL_ON), None)[0].evidence
+
+
+def test_a_bucket_on_a_later_page_is_still_checked():
+    s3 = FakeS3(["a", "b", "exposed"], pab={"a": ALL_ON, "b": ALL_ON},
+                policy_status={"a": False, "b": False, "exposed": True})
+    findings = _run(s3, FakeS3Control(ALL_ON))
+    assert s3.list_calls == 3
+    assert [f.resource_id for f in findings] == ["exposed"]
+
+
+def test_one_denied_bucket_does_not_stop_the_others():
+    """A bucket policy that denies the assessor role is common in exactly the
+    environments worth assessing. It must cost the run that one answer."""
+    s3 = FakeS3(
+        ["locked", "exposed"],
+        pab={"exposed": ALL_OFF},
+        policy_status={"exposed": False},
+        denied=["locked"],
+    )
+    result = _result(s3)
+    assert [f.resource_id for f in result.findings] == ["exposed"]
+    assert {(e.resource_id, e.operation, e.detail) for e in result.errors} == {
+        ("locked", "GetPublicAccessBlock", "AccessDenied"),
+        ("locked", "GetBucketPolicyStatus", "AccessDenied"),
+    }
+
+
+def test_a_denied_policy_read_still_yields_the_block_public_access_answer():
+    class HalfDenied(FakeS3):
+        def get_bucket_policy_status(self, Bucket):
+            raise _client_error("AccessDenied")
+
+    s3 = HalfDenied(["b"], pab={"b": ALL_OFF})
+    result = _result(s3)
+    assert [f.rule_key for f in result.findings] == ["block-public-access"]
+    assert [e.operation for e in result.errors] == ["GetBucketPolicyStatus"]
+
+
+def test_a_denied_listing_is_recorded_rather_than_raised():
+    class NoListing(FakeS3):
+        def list_buckets(self, ContinuationToken=None):
+            raise _client_error("AccessDenied")
+
+    result = _result(NoListing(["b"]))
+    assert result.findings == []
+    assert [(e.resource_id, e.operation) for e in result.errors] == [("account", "ListBuckets")]

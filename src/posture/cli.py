@@ -5,6 +5,14 @@ from __future__ import annotations
 import argparse
 import sys
 
+from botocore.exceptions import (
+    BotoCoreError,
+    ClientError,
+    EndpointConnectionError,
+    NoCredentialsError,
+    NoRegionError,
+)
+
 from posture import __version__, render
 from posture.demo.loader import DEMO_ACCOUNT_ID, DemoEc2, DemoS3, DemoS3Control
 from posture.runner import run_all
@@ -13,6 +21,10 @@ _DESCRIPTION = (
     "Read-only AWS posture checks. Run this only against accounts you own "
     "or are authorized to assess."
 )
+
+_EXIT_OK = 0
+_EXIT_CANNOT_START = 1
+_EXIT_INCOMPLETE = 2
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,14 +70,45 @@ def _live_clients(region: str | None) -> tuple:
     )
 
 
+def session_problem(error: Exception, region: str | None) -> str:
+    """One line a reader can act on, in place of a botocore traceback.
+
+    Failing to start is the most common first experience of a command line
+    tool, and thirty lines of stack answers a question nobody asked.
+    """
+    if isinstance(error, NoCredentialsError):
+        return "no AWS credentials found. Configure credentials, or run with --demo."
+    if isinstance(error, NoRegionError):
+        return "no AWS region set. Pass --region, or configure a default region."
+    if isinstance(error, EndpointConnectionError):
+        where = region or "the configured region"
+        return f"could not reach the AWS endpoint for {where}. Check the region and network."
+    if isinstance(error, ClientError):
+        code = error.response.get("Error", {}).get("Code") or "unknown error"
+        return f"AWS refused sts:GetCallerIdentity ({code}). Check the credentials and policy."
+    return f"could not start an AWS session ({type(error).__name__})."
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    clients = _demo_clients() if args.demo else _live_clients(args.region)
+
+    try:
+        clients = _demo_clients() if args.demo else _live_clients(args.region)
+    except (BotoCoreError, ClientError) as error:
+        sys.stderr.write(f"posture: {session_problem(error, args.region)}\n")
+        return _EXIT_CANNOT_START
+
     s3, ec2, s3control, account, metadata = clients
-    findings = run_all(s3, ec2, s3control, account)
-    output = render.to_json(findings, metadata) if args.json else render.to_table(findings)
+    result = run_all(s3, ec2, s3control, account)
+    if args.json:
+        output = render.to_json(result.findings, metadata, result.errors)
+    else:
+        output = render.to_table(result.findings, result.errors)
     sys.stdout.write(output)
-    return 0
+
+    # A run with gaps in its coverage exits nonzero, so a pipeline treating
+    # exit 0 as "assessed and clean" cannot be told that by a partial scan.
+    return _EXIT_OK if result.complete else _EXIT_INCOMPLETE
 
 
 def run() -> None:

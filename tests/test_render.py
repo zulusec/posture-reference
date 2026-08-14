@@ -2,6 +2,16 @@ import json
 
 from posture import render
 from posture.finding import Finding, Severity
+from posture.result import ScanError
+
+
+def _error(resource_id="locked", operation="GetBucketPolicyStatus", detail="AccessDenied"):
+    return ScanError(
+        check_id="S3.PUBLIC_ACCESS",
+        resource_id=resource_id,
+        operation=operation,
+        detail=detail,
+    )
 
 
 def _finding(check_id="A", resource_id="r", severity=Severity.HIGH):
@@ -35,7 +45,7 @@ def test_findings_json_sorts_keys():
 def test_to_json_separates_metadata_from_findings():
     output = render.to_json([_finding()], {"mode": "demo"})
     parsed = json.loads(output)
-    assert parsed["metadata"] == {"mode": "demo"}
+    assert parsed["metadata"] == {"mode": "demo", "errors": []}
     assert len(parsed["findings"]) == 1
 
 
@@ -48,3 +58,49 @@ def test_table_includes_severity_and_resource():
     assert "HIGH" in output
     assert "r" in output
     assert "Some evidence" in output
+
+
+def test_json_metadata_carries_an_empty_errors_block_on_a_complete_run():
+    """Always present, so a consumer checks one key rather than inferring
+    completeness from the absence of one."""
+    parsed = json.loads(render.to_json([_finding()], {"mode": "demo"}))
+    assert parsed["metadata"]["errors"] == []
+
+
+def test_json_records_every_unreadable_resource():
+    parsed = json.loads(render.to_json([], {"mode": "live"}, [_error()]))
+    assert parsed["metadata"]["errors"] == [
+        {
+            "check_id": "S3.PUBLIC_ACCESS",
+            "resource_id": "locked",
+            "operation": "GetBucketPolicyStatus",
+            "detail": "AccessDenied",
+        }
+    ]
+
+
+def test_to_json_does_not_mutate_the_metadata_it_was_given():
+    metadata = {"mode": "demo"}
+    render.to_json([], metadata, [_error()])
+    assert metadata == {"mode": "demo"}
+
+
+def test_table_says_a_partial_run_is_partial():
+    output = render.to_table([_finding()], [_error()])
+    assert output.startswith("INCOMPLETE RUN: 1 resource could not be read.")
+    assert "locked" in output
+    assert "AccessDenied" in output
+    assert "HIGH" in output
+
+
+def test_table_counts_unreadable_resources():
+    output = render.to_table([], [_error(), _error(resource_id="other")])
+    assert "INCOMPLETE RUN: 2 resources could not be read." in output
+
+
+def test_table_never_reports_a_partial_run_as_simply_clean():
+    """"No findings." over a run that could not read three buckets is the
+    silent degradation this whole errors block exists to prevent."""
+    output = render.to_table([], [_error()])
+    assert "No findings.\n" not in output
+    assert "No findings in what could be read." in output

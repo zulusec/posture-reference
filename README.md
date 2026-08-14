@@ -43,6 +43,11 @@ evidence. An assessor will not accept a result that changes between runs.
 | `S3.PUBLIC_ACCESS` | Block Public Access settings not enabled, and bucket policies granting public access |
 | `EC2.OPEN_SECURITY_GROUP` | Inbound rules permitting 0.0.0.0/0 or ::/0, raised to HIGH when the range covers an administration or database port |
 
+Both listings are paginated. `DescribeSecurityGroups` returns at most 1000
+groups per page against a default quota of 2500 per VPC, so reading one
+page would report a multi-VPC account clean while its exposed group sat on
+page two.
+
 Block Public Access is read at both the bucket and the account level,
 because the effective setting is the union of the two. An account that
 enables it account-wide and configures nothing per bucket is protected, and
@@ -61,6 +66,23 @@ requires is at `docs/iam-policy.json`.
 posture --region us-east-1
 posture --region us-east-1 --json
 ```
+
+### Incomplete runs
+
+An assessor role gets told no. A bucket policy denies the read, a listing
+throttles halfway through. A resource that could not be read is recorded
+and printed, because a shorter list of findings is otherwise
+indistinguishable from a cleaner account. In the table it is a block at the
+top of the output; in JSON it is `metadata.errors`.
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | Every resource in scope was read |
+| 1 | The run could not start, usually credentials, region, or network |
+| 2 | The run finished with gaps, listed in the output |
+
+Exit 0 is the only code that means the account was assessed, so a pipeline
+treating it that way cannot be handed that claim by a partial scan.
 
 ## How this was built
 
