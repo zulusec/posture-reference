@@ -1,0 +1,10 @@
+{
+  "get_public_access_block": {
+    "000000000000": {
+      "BlockPublicAcls": true,
+      "IgnorePublicAcls": true,
+      "BlockPublicPolicy": false,
+      "RestrictPublicBuckets": false
+    }
+  }
+}

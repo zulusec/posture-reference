@@ -43,6 +43,12 @@ evidence. An assessor will not accept a result that changes between runs.
 | `S3.PUBLIC_ACCESS` | Block Public Access settings not enabled, and bucket policies granting public access |
 | `EC2.OPEN_SECURITY_GROUP` | Inbound rules permitting 0.0.0.0/0 or ::/0, raised to HIGH when the range covers an administration or database port |
 
+Block Public Access is read at both the bucket and the account level,
+because the effective setting is the union of the two. An account that
+enables it account-wide and configures nothing per bucket is protected, and
+a check that reads only the bucket level calls every one of those buckets
+exposed.
+
 ## Running against a real account
 
 Only run this against accounts you own or are authorized to assess.

@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 from posture import cli, render
-from posture.demo.loader import DemoEc2, DemoS3
+from posture.demo.loader import DEMO_ACCOUNT_ID, DemoEc2, DemoS3, DemoS3Control
 from posture.runner import run_all
 
 _FIXTURES = Path(__file__).resolve().parents[1] / "src" / "posture" / "demo" / "fixtures"
@@ -42,8 +42,14 @@ def _run_posture(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(_posture_command() + list(args), capture_output=True, check=False)
 
 
+def _demo_run(s3=None, ec2=None) -> list:
+    """The same client set the CLI builds for --demo, so these tests exercise
+    the path a reader running the README's example actually takes."""
+    return run_all(s3 or DemoS3(), ec2 or DemoEc2(), DemoS3Control(), DEMO_ACCOUNT_ID)
+
+
 def _demo_findings_json() -> str:
-    return render.findings_json(run_all(DemoS3(), DemoEc2()))
+    return render.findings_json(_demo_run())
 
 
 def test_repeated_runs_are_byte_identical():
@@ -53,7 +59,7 @@ def test_repeated_runs_are_byte_identical():
 def test_output_is_independent_of_bucket_order():
     data = _fixture("s3.json")
     data["list_buckets"] = {"Buckets": list(reversed(data["list_buckets"]["Buckets"]))}
-    shuffled = render.findings_json(run_all(DemoS3(data), DemoEc2()))
+    shuffled = render.findings_json(_demo_run(s3=DemoS3(data)))
     assert shuffled == _demo_findings_json()
 
 
@@ -61,7 +67,7 @@ def test_output_is_independent_of_security_group_order():
     data = _fixture("ec2.json")
     groups = data["describe_security_groups"]["SecurityGroups"]
     data["describe_security_groups"] = {"SecurityGroups": list(reversed(groups))}
-    shuffled = render.findings_json(run_all(DemoS3(), DemoEc2(data)))
+    shuffled = render.findings_json(_demo_run(ec2=DemoEc2(data)))
     assert shuffled == _demo_findings_json()
 
 
@@ -74,7 +80,7 @@ def test_cli_demo_json_is_byte_identical_across_runs(capsys):
 
 
 def test_findings_carry_no_volatile_fields():
-    findings = run_all(DemoS3(), DemoEc2())
+    findings = _demo_run()
     assert findings, "fixtures must produce findings for this test to mean anything"
     expected_keys = {"check_id", "resource_id", "rule_key", "severity", "title", "evidence"}
     for finding in findings:

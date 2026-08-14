@@ -11,6 +11,8 @@ from importlib.resources import files
 
 from botocore.exceptions import ClientError
 
+DEMO_ACCOUNT_ID = "000000000000"
+
 
 def _load(name: str) -> dict:
     resource = files("posture.demo").joinpath("fixtures", name)
@@ -39,6 +41,21 @@ class DemoS3:
         if status is None:
             raise _missing("NoSuchBucketPolicy", "GetBucketPolicyStatus")
         return {"PolicyStatus": {"IsPublic": status}}
+
+
+class DemoS3Control:
+    """Account-level Block Public Access, which the real check unions with the
+    bucket-level setting. The fixture leaves two of the four off so the demo
+    shows the union doing work rather than hiding it."""
+
+    def __init__(self, data: dict | None = None):
+        self._data = data if data is not None else _load("s3control.json")
+
+    def get_public_access_block(self, AccountId: str) -> dict:
+        config = self._data["get_public_access_block"].get(AccountId)
+        if config is None:
+            raise _missing("NoSuchPublicAccessBlockConfiguration", "GetPublicAccessBlock")
+        return {"PublicAccessBlockConfiguration": config}
 
 
 class DemoEc2:

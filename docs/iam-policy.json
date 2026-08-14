@@ -7,6 +7,7 @@
       "Action": [
         "s3:ListAllMyBuckets",
         "s3:GetBucketPublicAccessBlock",
+        "s3:GetAccountPublicAccessBlock",
         "s3:GetBucketPolicyStatus",
         "ec2:DescribeSecurityGroups",
         "sts:GetCallerIdentity"
