@@ -29,10 +29,9 @@ def run(s3) -> list[Finding]:
 def _check_bucket(s3, name: str) -> list[Finding]:
     findings: list[Finding] = []
 
+    config = _public_access_block(s3, name)
     disabled = sorted(
-        setting
-        for setting in _BPA_SETTINGS
-        if not _public_access_block(s3, name).get(setting, False)
+        setting for setting in _BPA_SETTINGS if not config.get(setting, False)
     )
     if disabled:
         findings.append(

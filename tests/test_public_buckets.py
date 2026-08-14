@@ -14,11 +14,13 @@ class FakeS3:
         self._buckets = buckets
         self._pab = pab or {}
         self._policy_status = policy_status or {}
+        self.pab_calls = 0
 
     def list_buckets(self):
         return {"Buckets": [{"Name": name} for name in self._buckets]}
 
     def get_public_access_block(self, Bucket):
+        self.pab_calls += 1
         if Bucket not in self._pab:
             raise _client_error("NoSuchPublicAccessBlockConfiguration")
         return {"PublicAccessBlockConfiguration": self._pab[Bucket]}
@@ -81,3 +83,17 @@ def test_unexpected_client_error_is_not_swallowed():
 
     with pytest.raises(ClientError):
         public_buckets.run(Broken(["b"]))
+
+
+def test_public_access_block_is_fetched_once_per_bucket():
+    s3 = FakeS3(["a", "b"], pab={"a": ALL_ON, "b": ALL_ON},
+                policy_status={"a": False, "b": False})
+    public_buckets.run(s3)
+    assert s3.pab_calls == 2
+
+
+def test_findings_carry_the_check_id():
+    s3 = FakeS3(["b"], pab={}, policy_status={"b": True})
+    findings = public_buckets.run(s3)
+    assert findings
+    assert {f.check_id for f in findings} == {"S3.PUBLIC_ACCESS"}
