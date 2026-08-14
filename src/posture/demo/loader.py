@@ -7,15 +7,14 @@ real check code rather than a parallel implementation.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from importlib.resources import files
 
 from botocore.exceptions import ClientError
 
-_FIXTURES = Path(__file__).parent / "fixtures"
-
 
 def _load(name: str) -> dict:
-    return json.loads((_FIXTURES / name).read_text(encoding="utf-8"))
+    resource = files("posture.demo").joinpath("fixtures", name)
+    return json.loads(resource.read_text(encoding="utf-8"))
 
 
 def _missing(code: str, operation: str) -> ClientError:
