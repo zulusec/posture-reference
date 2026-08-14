@@ -2,9 +2,19 @@
 
 If any of these fail, the tool is no longer safe to put in front of an
 assessor, because a finding that cannot be reproduced cannot be evidence.
+
+The in-process checks below prove determinism within a single interpreter,
+but they cannot catch a value that is constant for the life of one process
+yet varies between invocations (an import-time UUID or timestamp, for
+example). The cross-process checks close that gap by shelling out to the
+installed console script twice, the way a reader running the README's
+example actually would.
 """
 
 import json
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 from posture import cli, render
@@ -16,6 +26,20 @@ _FIXTURES = Path(__file__).resolve().parents[1] / "src" / "posture" / "demo" / "
 
 def _fixture(name: str) -> dict:
     return json.loads((_FIXTURES / name).read_text(encoding="utf-8"))
+
+
+def _posture_command() -> list[str]:
+    script = shutil.which("posture")
+    if script is None:
+        candidate = Path(sys.executable).parent / "posture"
+        if candidate.exists():
+            script = str(candidate)
+    assert script, "posture console script not found; install with `pip install -e .`"
+    return [script]
+
+
+def _run_posture(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(_posture_command() + list(args), capture_output=True, check=False)
 
 
 def _demo_findings_json() -> str:
@@ -52,6 +76,24 @@ def test_cli_demo_json_is_byte_identical_across_runs(capsys):
 def test_findings_carry_no_volatile_fields():
     findings = run_all(DemoS3(), DemoEc2())
     assert findings, "fixtures must produce findings for this test to mean anything"
-    volatile = {"timestamp", "generated_at", "duration", "id", "uuid"}
+    expected_keys = {"check_id", "resource_id", "rule_key", "severity", "title", "evidence"}
     for finding in findings:
-        assert not volatile & set(finding.to_dict())
+        assert set(finding.to_dict()) == expected_keys
+
+
+def test_cli_json_output_is_byte_identical_across_processes():
+    first = _run_posture("--demo", "--json")
+    second = _run_posture("--demo", "--json")
+    assert first.returncode == 0
+    assert second.returncode == 0
+    assert first.stdout
+    assert first.stdout == second.stdout
+
+
+def test_cli_table_output_is_byte_identical_across_processes():
+    first = _run_posture("--demo")
+    second = _run_posture("--demo")
+    assert first.returncode == 0
+    assert second.returncode == 0
+    assert first.stdout
+    assert first.stdout == second.stdout
