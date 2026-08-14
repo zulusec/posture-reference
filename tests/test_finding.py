@@ -43,3 +43,15 @@ def test_sort_is_independent_of_input_order():
         _finding(check_id="C", resource_id="c", severity=Severity.LOW),
     ]
     assert sort_findings(items) == sort_findings(list(reversed(items)))
+
+
+def test_sort_ranks_check_id_above_resource_id():
+    later = _finding(check_id="B", resource_id="a")
+    earlier = _finding(check_id="A", resource_id="z")
+    assert sort_findings([later, earlier]) == [earlier, later]
+
+
+def test_sort_uses_rule_key_as_final_tiebreak():
+    second = _finding(check_id="A", resource_id="a", rule_key="k2")
+    first = _finding(check_id="A", resource_id="a", rule_key="k1")
+    assert sort_findings([second, first]) == [first, second]
