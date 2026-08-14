@@ -21,6 +21,10 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 
+class PaginationError(RuntimeError):
+    """A listing returned a token that does not advance it."""
+
+
 def paginate(operation, token_key: str, result_key: str) -> Iterator[dict]:
     """Yield every item under result_key, following tokens to the last page."""
     params: dict = {}
@@ -30,4 +34,11 @@ def paginate(operation, token_key: str, result_key: str) -> Iterator[dict]:
         token = response.get(token_key)
         if not token:
             return
+        if token == params.get(token_key):
+            # botocore's own PageIterator carries this guard. A server that
+            # hands back the same token twice, which is likelier from an
+            # S3-compatible endpoint or a proxy than from AWS itself, would
+            # otherwise loop forever, and a tool that hangs is worse than one
+            # that stops and says why. The runner records this as a gap.
+            raise PaginationError(f"{token_key} repeated, so the listing did not advance")
         params[token_key] = token

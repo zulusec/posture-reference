@@ -191,8 +191,10 @@ def test_denied_account_lookup_degrades_to_the_bucket_level():
     assert len(result.findings) == 1
     assert "not enabled at bucket level" in result.findings[0].evidence
     assert "account" not in result.findings[0].evidence
+    # Named apart from the bucket-level call, because the permission to grant
+    # after reading this line is s3:GetAccountPublicAccessBlock.
     assert [(e.resource_id, e.operation) for e in result.errors] == [
-        ("account", "GetPublicAccessBlock")
+        ("account", "GetAccountPublicAccessBlock")
     ]
 
 

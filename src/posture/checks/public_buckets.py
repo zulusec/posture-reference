@@ -49,7 +49,10 @@ def run(s3, s3control, account_id: str | None) -> ScanResult:
         account_config = _account_public_access_block(s3control, account_id)
     except _UNREADABLE as error:
         account_config = None
-        errors.append(_error(ACCOUNT_SCOPE, "GetPublicAccessBlock", error))
+        # Named for the account-level operation, not the bucket-level one it
+        # shares a method name with. The permission a reader needs to grant
+        # after seeing this line is s3:GetAccountPublicAccessBlock.
+        errors.append(_error(ACCOUNT_SCOPE, "GetAccountPublicAccessBlock", error))
 
     account_known = account_config is not None
     account_config = account_config or {}

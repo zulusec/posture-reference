@@ -87,15 +87,26 @@ def test_to_json_does_not_mutate_the_metadata_it_was_given():
 
 def test_table_says_a_partial_run_is_partial():
     output = render.to_table([_finding()], [_error()])
-    assert output.startswith("INCOMPLETE RUN: 1 resource could not be read.")
+    assert output.startswith("INCOMPLETE RUN: 1 read could not be completed.")
     assert "locked" in output
     assert "AccessDenied" in output
     assert "HIGH" in output
 
 
-def test_table_counts_unreadable_resources():
-    output = render.to_table([], [_error(), _error(resource_id="other")])
-    assert "INCOMPLETE RUN: 2 resources could not be read." in output
+def test_the_headline_counts_reads_rather_than_resources():
+    """Isolation is per call, so one denied bucket costs two reads. A headline
+    that counted errors while saying "resources" would print 6 above three
+    named buckets, and a coverage claim that cannot be checked against the
+    lines under it is worth less than none."""
+    output = render.to_table(
+        [],
+        [
+            _error(operation="GetPublicAccessBlock"),
+            _error(operation="GetBucketPolicyStatus"),
+        ],
+    )
+    assert "INCOMPLETE RUN: 2 reads could not be completed." in output
+    assert output.count("locked") == 2
 
 
 def test_table_never_reports_a_partial_run_as_simply_clean():

@@ -96,10 +96,12 @@ green CI run. Review happened after the merge, not before it, and each round
 of review findings landed as its own pull request. PRs #2, #4, #7 and #9 are
 those review rounds: #2 follows #1, #4 follows #3, #7 follows #6, #9 follows
 #8. Open any of those four and you can read what the review found and what
-the fix was.
+the fix was. A later review of the whole branch produced the same pattern at
+a larger scale, and PRs #11 onward are its rounds.
 
-GitHub therefore records no approving review on any of the ten pull requests,
-and the merges look fast because the merge was not the gate. The gate was the
+GitHub therefore records no approving review on any pull request in this
+repository, and the merges look fast because the merge was not the gate. The
+gate was the
 review pass that produced the next pull request. The tradeoff is real: the
 finding and its fix are both permanently in the history rather than squashed
 out of it, at the cost of code sitting on `main` for a few minutes before it

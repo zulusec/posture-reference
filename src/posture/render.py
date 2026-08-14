@@ -44,10 +44,15 @@ def to_table(findings: Iterable[Finding], errors: Iterable[ScanError] = ()) -> s
 
 
 def _incomplete_block(errors: list[ScanError]) -> str:
-    noun = "resource" if len(errors) == 1 else "resources"
+    # Reads, not resources. Isolation is per call, so one denied bucket costs
+    # two reads, and a headline counting errors while saying "resources" would
+    # print six above three named buckets. Being wrong about coverage in the
+    # block whose whole job is coverage is the one mistake it cannot make.
+    noun = "read" if len(errors) == 1 else "reads"
     lines = [
-        f"INCOMPLETE RUN: {len(errors)} {noun} could not be read.",
-        "The findings below do not cover them. This is not a clean result for them.",
+        f"INCOMPLETE RUN: {len(errors)} {noun} could not be completed.",
+        "The findings below do not cover them. This is not a clean result",
+        "for the resources listed here.",
         "",
     ]
     for error in errors:
