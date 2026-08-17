@@ -125,3 +125,130 @@ def test_a_failure_partway_through_the_listing_is_recorded_not_raised():
     assert len(result.errors) == 1
     assert result.errors[0].operation == "DescribeSecurityGroups"
     assert result.errors[0].detail == "AccessDenied"
+
+
+def _ranges(from_port, to_port, *cidrs):
+    return {
+        "IpProtocol": "tcp",
+        "FromPort": from_port,
+        "ToPort": to_port,
+        "IpRanges": [{"CidrIp": cidr} for cidr in cidrs],
+    }
+
+
+def test_two_halves_of_the_internet_are_the_whole_internet():
+    """0.0.0.0/1 and 128.0.0.0/1 on one rule is 0.0.0.0/0 written in two
+    lines. A string comparison against "0.0.0.0/0" reports that group clean."""
+    permission = _ranges(22, 22, "0.0.0.0/1", "128.0.0.0/1")
+    findings = _run(FakeEc2([_group(permissions=[permission])]))
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.HIGH
+    assert findings[0].rule_key == "tcp:22-22:0.0.0.0/0"
+    assert findings[0].evidence == (
+        "protocol tcp, ports 22 to 22, source 0.0.0.0/1, 128.0.0.0/1, "
+        "together covering 0.0.0.0/0"
+    )
+
+
+def test_the_two_halves_are_reported_whatever_order_they_arrive_in():
+    permission = _ranges(22, 22, "128.0.0.0/1", "0.0.0.0/1")
+    findings = _run(FakeEc2([_group(permissions=[permission])]))
+    assert len(findings) == 1
+    assert findings[0].rule_key == "tcp:22-22:0.0.0.0/0"
+    assert "0.0.0.0/1, 128.0.0.0/1" in findings[0].evidence
+
+
+def test_many_ranges_that_add_up_to_everything_are_reported():
+    permission = _ranges(22, 22, "0.0.0.0/2", "64.0.0.0/2", "128.0.0.0/1")
+    findings = _run(FakeEc2([_group(permissions=[permission])]))
+    assert len(findings) == 1
+    assert findings[0].rule_key == "tcp:22-22:0.0.0.0/0"
+
+
+def test_half_the_internet_on_its_own_is_not_reported():
+    """The finding says "from anywhere" and the claim is meant to be provable
+    rather than estimated. A wide range that leaves addresses out is a
+    different finding this tool does not make."""
+    permission = _ranges(22, 22, "0.0.0.0/1")
+    assert _run(FakeEc2([_group(permissions=[permission])])) == []
+
+
+def test_two_halves_of_the_ipv6_internet_are_reported():
+    permission = {
+        "IpProtocol": "tcp",
+        "FromPort": 22,
+        "ToPort": 22,
+        "Ipv6Ranges": [{"CidrIpv6": "::/1"}, {"CidrIpv6": "8000::/1"}],
+    }
+    findings = _run(FakeEc2([_group(permissions=[permission])]))
+    assert len(findings) == 1
+    assert findings[0].rule_key == "tcp:22-22:::/0"
+    assert "together covering ::/0" in findings[0].evidence
+
+
+def test_the_same_open_range_listed_twice_is_one_finding():
+    permission = _ranges(22, 22, "0.0.0.0/0", "0.0.0.0/0")
+    findings = _run(FakeEc2([_group(permissions=[permission])]))
+    assert len(findings) == 1
+    assert findings[0].rule_key == "tcp:22-22:0.0.0.0/0"
+
+
+def test_an_unreadable_cidr_is_recorded_rather_than_dropped():
+    """A source this check cannot parse is a source it did not assess.
+    Skipping it quietly would let a group come back clean on a range nobody
+    looked at, which is the one result this tool must not produce."""
+    permission = _ranges(22, 22, "10.0.0/8")
+    result = open_security_groups.run(FakeEc2([_group(permissions=[permission])]))
+    assert result.findings == []
+    assert len(result.errors) == 1
+    assert result.errors[0].resource_id == "sg-1"
+    assert result.errors[0].detail == "unreadable CIDR 10.0.0/8"
+    assert not result.complete
+
+
+def test_an_unreadable_cidr_does_not_cost_the_other_ranges():
+    permission = _ranges(22, 22, "0.0.0.0/0", "not-a-cidr")
+    result = open_security_groups.run(FakeEc2([_group(permissions=[permission])]))
+    assert [f.rule_key for f in result.findings] == ["tcp:22-22:0.0.0.0/0"]
+    assert len(result.errors) == 1
+
+
+def test_an_ipv6_range_filed_under_the_ipv4_key_is_recorded():
+    permission = {
+        "IpProtocol": "tcp",
+        "FromPort": 22,
+        "ToPort": 22,
+        "IpRanges": [{"CidrIp": "::/0"}],
+    }
+    result = open_security_groups.run(FakeEc2([_group(permissions=[permission])]))
+    assert result.findings == []
+    assert [e.detail for e in result.errors] == ["unreadable CIDR ::/0"]
+
+
+def test_a_peer_security_group_source_is_not_a_finding():
+    """UserIdGroupPairs name another security group. That is a source, but it
+    is never the internet, so it is outside this check rather than missed."""
+    permission = {
+        "IpProtocol": "tcp",
+        "FromPort": 22,
+        "ToPort": 22,
+        "UserIdGroupPairs": [{"GroupId": "sg-peer"}],
+    }
+    result = open_security_groups.run(FakeEc2([_group(permissions=[permission])]))
+    assert result.findings == []
+    assert result.errors == []
+
+
+def test_a_prefix_list_source_is_not_examined():
+    """Executable form of the limitation the README states. A managed prefix
+    list can contain 0.0.0.0/0 and reading one needs a permission the minimal
+    policy does not grant, so this run is not a statement about it."""
+    permission = {
+        "IpProtocol": "tcp",
+        "FromPort": 22,
+        "ToPort": 22,
+        "PrefixListIds": [{"PrefixListId": "pl-0123456789abcdef0"}],
+    }
+    result = open_security_groups.run(FakeEc2([_group(permissions=[permission])]))
+    assert result.findings == []
+    assert result.errors == []

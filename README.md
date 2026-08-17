@@ -41,7 +41,7 @@ evidence. An assessor will not accept a result that changes between runs.
 | Check | What it reports |
 | --- | --- |
 | `S3.PUBLIC_ACCESS` | Block Public Access settings not enabled, and bucket policies granting public access |
-| `EC2.OPEN_SECURITY_GROUP` | Inbound rules permitting 0.0.0.0/0 or ::/0, raised to HIGH when the range covers an administration or database port |
+| `EC2.OPEN_SECURITY_GROUP` | Inbound rules whose sources add up to 0.0.0.0/0 or ::/0, raised to HIGH when the port range covers an administration or database port |
 
 Both listings are paginated. `DescribeSecurityGroups` returns at most 1000
 groups per page against a default quota of 2500 per VPC, so reading one
@@ -53,6 +53,11 @@ because the effective setting is the union of the two. An account that
 enables it account-wide and configures nothing per bucket is protected, and
 a check that reads only the bucket level calls every one of those buckets
 exposed.
+
+"From anywhere" is arithmetic on the ranges rather than a match on the
+string `0.0.0.0/0`. A rule listing 0.0.0.0/1 and 128.0.0.0/1 is the whole
+internet written in two lines, and a string comparison calls that group
+restricted. The same pair exists on the v6 side as ::/1 and 8000::/1.
 
 ## Running against a real account
 
@@ -66,6 +71,37 @@ requires is at `docs/iam-policy.json`.
 posture --region us-east-1
 posture --region us-east-1 --json
 ```
+
+### What these checks do not look at
+
+Written down here rather than left to be discovered, because a limit nobody
+states reads as a result.
+
+Security groups are read one region at a time. `DescribeSecurityGroups`
+returns the groups in the client's region, so `--region us-east-1` is an
+answer about us-east-1 and about nothing else, and exit 0 means every
+resource in that scope was read. Run it once per region you use. The S3
+check is not regional: `ListBuckets` is account-wide, so a single run covers
+every bucket wherever it lives.
+
+A source that is a managed prefix list is not resolved. A prefix list can
+contain 0.0.0.0/0 and this check will not see it, because reading one needs
+`ec2:GetManagedPrefixListEntries`, which is not in `docs/iam-policy.json`.
+A source that is another security group is not the internet, so it sits
+outside this check's subject rather than being missed by it.
+
+A rule is reported when its ranges add up to the entire address space.
+0.0.0.0/1 on its own is half the internet and is not reported. The finding
+says "from anywhere", so the line is drawn where that is provable rather
+than estimated.
+
+Port 443 open to 0.0.0.0/0 is reported as MEDIUM, and on an internet-facing
+load balancer that is the correct configuration. This check can see a
+security group. It cannot see whether a load balancer or an unpatched host
+sits behind it, and guessing would mean sometimes reporting clean on an
+exposure it could plainly see. A false clean costs more than a finding a
+reader dismisses in five seconds, so the severity stays and the triage is
+yours. The question to ask of every MEDIUM here is what is listening.
 
 ### Incomplete runs
 
